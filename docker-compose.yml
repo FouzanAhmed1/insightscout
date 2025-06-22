@@ -1,0 +1,117 @@
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: insightscout
+      POSTGRES_PASSWORD: insightscout_secret
+      POSTGRES_DB: insightscout
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insightscout"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ───────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── RabbitMQ ────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: insightscout
+      RABBITMQ_DEFAULT_PASS: insightscout_secret
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # Management UI
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # ── FastAPI Backend ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://insightscout:insightscout_secret@postgres:5432/insightscout
+      DATABASE_URL_SYNC: postgresql://insightscout:insightscout_secret@postgres:5432/insightscout
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://insightscout:insightscout_secret@rabbitmq:5672/
+      JWT_SECRET: change-me-in-production-insightscout-2024
+      HUGGINGFACE_CACHE: /app/.cache/huggingface
+    ports:
+      - "8000:8000"
+    volumes:
+      - hf_cache:/app/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  # ── RabbitMQ Worker ─────────────────────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://insightscout:insightscout_secret@postgres:5432/insightscout
+      DATABASE_URL_SYNC: postgresql://insightscout:insightscout_secret@postgres:5432/insightscout
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://insightscout:insightscout_secret@rabbitmq:5672/
+      HUGGINGFACE_CACHE: /app/.cache/huggingface
+    volumes:
+      - hf_cache:/app/.cache/huggingface
+      - screenshots:/app/data/screenshots
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: python -m app.workers.consumer
+
+  # ── Next.js Frontend ────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      INTERNAL_API_URL: http://backend:8000
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+  hf_cache:
+  screenshots:
