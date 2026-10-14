@@ -2,7 +2,7 @@
 set -e
 
 echo "=========================================="
-echo "  InsightScout — Competitive Intelligence Platform"
+echo "  InsightScout - Competitive Intelligence Platform"
 echo "=========================================="
 echo ""
 
@@ -17,13 +17,16 @@ if ! docker compose version &> /dev/null; then
     exit 1
 fi
 
+# Create .env from the example on first run so overrides are possible
+if [ ! -f .env ] && [ -f .env.example ]; then
+    echo "Creating .env from .env.example (edit it to customize settings)..."
+    cp .env.example .env
+fi
+
 echo "[1/3] Starting infrastructure (PostgreSQL, Redis, RabbitMQ)..."
-docker compose up -d postgres redis rabbitmq
+docker compose up -d --wait postgres redis rabbitmq
 
-echo "[2/3] Waiting for services to be healthy..."
-sleep 5
-
-echo "[3/3] Starting backend, worker, and frontend..."
+echo "[2/3] Building and starting backend, worker, and frontend..."
 docker compose up -d --build
 
 echo ""

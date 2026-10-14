@@ -1,9 +1,10 @@
 """
-Database seeder — creates demo user, competitors, and alerts on first run.
+Database seeder - creates demo user, competitors, and alerts on first run.
 Idempotent: skips if demo user already exists.
 """
 import asyncio
 import logging
+import os
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -16,10 +17,10 @@ from app.models import User, Competitor, Alert
 
 logger = logging.getLogger(__name__)
 
-# ── Demo credentials ──────────────────────────────────────────
-DEMO_EMAIL = "admin@insightscout.dev"
-DEMO_PASSWORD = "admin123"
-DEMO_NAME = "Fouzan (Admin)"
+# ── Demo credentials (overridable via env, e.g. DEMO_PASSWORD in .env) ──
+DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "admin@insightscout.dev")
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "admin123")
+DEMO_NAME = os.environ.get("DEMO_NAME", "Fouzan (Admin)")
 
 # ── Competitors to seed ──────────────────────────────────────
 COMPETITORS = [
@@ -146,7 +147,7 @@ ALERTS = [
 
 
 async def seed_database():
-    """Seed the database with demo data. Idempotent — skips if demo user exists."""
+    """Seed the database with demo data. Idempotent - skips if demo user exists."""
     async with async_session() as db:
         # Check if demo user already exists
         result = await db.execute(select(User).where(User.email == DEMO_EMAIL))

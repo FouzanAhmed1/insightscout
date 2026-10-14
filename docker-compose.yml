@@ -51,6 +51,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://insightscout:insightscout_secret@postgres:5432/insightscout
       DATABASE_URL_SYNC: postgresql://insightscout:insightscout_secret@postgres:5432/insightscout
@@ -78,6 +80,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://insightscout:insightscout_secret@postgres:5432/insightscout
       DATABASE_URL_SYNC: postgresql://insightscout:insightscout_secret@postgres:5432/insightscout
