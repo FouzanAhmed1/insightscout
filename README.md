@@ -1,91 +1,128 @@
 # InsightScout
 
-A competitive intelligence platform I built to track competitors across multiple data sources, analyze sentiment and activities using NLP, and surface insights through a clean dashboard.
+An AI-powered competitive intelligence platform. Track competitors across ten-plus data sources, run the results through NLP pipelines (sentiment scoring, activity classification, visual change detection), and surface everything in a real-time dashboard with alerts.
 
-## What It Does
-
-- **Data Ingestion** — Pulls data from RSS feeds, News API, Reddit, Twitter/X, GitHub, SEC filings, YouTube, and website scraping
-- **Sentiment Analysis** — Scores competitor mentions using RoBERTa, tracks sentiment trends over time
-- **Activity Classification** — Automatically categorizes activities (product launches, pricing changes, hiring, partnerships, etc.) using zero-shot classification
-- **Website Monitoring** — Takes automated screenshots via Playwright and detects visual changes using CLIP embeddings
-- **Insight Generation** — Clusters related activities and flags opportunities, threats, trends, and anomalies
-- **Custom Alerts** — Set up rules based on sentiment thresholds, keywords, or activity types
-- **Dashboard** — KPI cards, sentiment trend charts, competitor comparisons, and a real-time activity feed
-
-## Tech Stack
-
-| Layer | Tech |
-|-------|------|
-| Frontend | Next.js 14, React, TypeScript, Tailwind CSS, Recharts, Zustand |
-| Backend | FastAPI, SQLAlchemy 2.0 (async), Alembic, APScheduler |
-| ML/NLP | HuggingFace Transformers, Sentence-Transformers, CLIP, scikit-learn |
-| Infra | PostgreSQL 16, Redis 7, RabbitMQ 3.13, Docker Compose |
-| Auth | JWT (python-jose), bcrypt |
-
-## Architecture
+## How the system fits together
 
 ```
-Next.js (:3000) → FastAPI (:8000) → PostgreSQL (:5432)
-                        ↓
-                  RabbitMQ (:5672)     Redis (:6379)
-                        ↓
-                  Worker Process
-                  (ingestion, NLP, monitoring, insights)
+Ingestion sources          NLP pipelines               API            UI
+(RSS, News API,            (sentiment, NER,             (FastAPI)      (Next.js)
+ Reddit, GitHub, SEC,       zero-shot classification,
+ YouTube, Twitter,          CLIP vision diffing,        Postgres
+ LinkedIn, App Store,       insight clustering)        Redis
+ website scraping)                                     RabbitMQ
+      │                          │                       │              │
+      └─────────► Worker ◄───────┴──► queue results ────►┴──► dashboard │
+                  (scheduler +                                              │
+                   RabbitMQ consumer)                                user login
 ```
 
-## Getting Started
+1. **Ingest** - a scheduler publishes ingestion jobs to RabbitMQ; the worker fetches competitor mentions from RSS, news, Reddit, GitHub, SEC filings, YouTube, Twitter/X, LinkedIn, the App Store, and raw website scraping.
+2. **Analyze** - each record runs through transformer-based NLP: RoBERTa sentiment scoring, NER, zero-shot activity classification (product launch, pricing change, hiring, partnership, etc.). Website snapshots go through Playwright + CLIP embeddings for visual change detection.
+3. **Cluster** - related activities are grouped into insights flagged as opportunities, threats, trends, or anomalies.
+4. **Serve** - FastAPI exposes everything under `/api/*`; a Next.js dashboard shows KPI cards, sentiment trends, competitor comparisons, and a live activity feed. Custom alert rules fire on sentiment drops, keywords, or activity types.
 
-You just need Docker.
+## Tech stack
+
+| Layer      | Tech                                                                          |
+|------------|-------------------------------------------------------------------------------|
+| Frontend   | Next.js 14, React 18, TypeScript, Tailwind CSS, Recharts, Zustand              |
+| Backend    | FastAPI, SQLAlchemy 2.0 (async), Alembic, APScheduler                          |
+| ML / NLP   | HuggingFace Transformers, Sentence-Transformers, CLIP, scikit-learn           |
+| Infra      | PostgreSQL 16, Redis 7, RabbitMQ 3.13, Docker Compose                          |
+| Auth       | JWT (python-jose), bcrypt                                                     |
+
+## Prerequisites
+
+- Docker Engine 24+ with the Docker Compose v2 plugin (`docker compose version` should work)
+- ~8 GB of free RAM and ~6 GB of disk for the ML model downloads on first run
+
+No other setup. Python, Node, Postgres, Redis, and RabbitMQ all run inside containers.
+
+## Quickstart
+
+From a fresh clone:
 
 ```bash
-chmod +x start.sh
+git clone <this-repo>
+cd insightscout
 ./start.sh
 ```
 
-This spins up all 6 services. Once it's running:
+That is the whole setup. The script checks for Docker, creates a `.env` from `.env.example` if you do not have one, brings up Postgres, Redis, and RabbitMQ, then builds and starts the backend, the worker, and the frontend.
 
-- **Frontend:** http://localhost:3000
-- **API:** http://localhost:8000
-- **Swagger Docs:** http://localhost:8000/docs
+When it finishes, open:
 
-A demo account gets seeded automatically — `admin@insightscout.dev` / `admin123`.
+- **Dashboard:** http://localhost:3000
+- **API docs (Swagger):** http://localhost:8000/docs
+- **RabbitMQ management:** http://localhost:15672 (user `insightscout`, password `insightscout_secret`)
 
-## Environment Variables
+A demo account is seeded on first run: `admin@insightscout.dev` / `admin123`. It comes with 8 competitors and 5 alert rules already configured, and an initial ingestion job is triggered automatically, so you should see data flowing within a few minutes.
 
-The Docker setup handles defaults, but if you want to customize:
-
-**backend/.env:**
-```env
-DATABASE_URL=postgresql+asyncpg://insightscout:insightscout_secret@postgres:5432/insightscout
-REDIS_URL=redis://redis:6379/0
-RABBITMQ_URL=amqp://insightscout:insightscout_secret@rabbitmq:5672/
-JWT_SECRET=change-me-in-production
-
-# Optional — for additional data sources
-NEWS_API_KEY=
-REDDIT_CLIENT_ID=
-REDDIT_CLIENT_SECRET=
-TWITTER_BEARER_TOKEN=
-```
-
-**frontend/.env.local:**
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-## How It Works
-
-1. Add competitors you want to track (name, website, industry)
-2. Trigger data ingestion — the worker fetches data from configured sources
-3. NLP pipeline runs automatically: sentiment scoring, entity extraction, activity classification
-4. Check the dashboard for trends, insights, and alerts
-5. Set up alert rules to get notified about specific changes
-
-Website monitoring works separately — trigger a snapshot from the monitoring page and the system compares it against previous snapshots using CLIP embeddings and SSIM.
-
-## Stopping
+Watch the worker to see ingestion and NLP processing in real time:
 
 ```bash
-docker compose down        # stop services
-docker compose down -v     # stop and remove data
+docker compose logs -f worker
 ```
+
+## Running the demo
+
+1. Log in with the seeded demo account.
+2. The dashboard should already have competitors (OpenAI, Anthropic, Nvidia, and others). If the feed is empty, give the first ingestion pass a few minutes to complete.
+3. Try it out:
+   - Add a competitor from the Competitors page, then hit **Run ingestion** to pull fresh mentions.
+   - Check the **Sentiment** page for trend lines per competitor.
+   - Open **Monitoring**, add a website URL, and trigger a snapshot to see visual change detection.
+   - Create an alert rule (for example: notify me when sentiment for a competitor drops below -0.3) on the **Alerts** page.
+
+## Configuration
+
+All settings live in the root `.env` file. Copy `.env.example` to `.env` (start.sh does this for you) and edit what you need. One caveat: the infra connection strings (`DATABASE_URL`, `REDIS_URL`, `RABBITMQ_URL`) are pinned by docker-compose.yml for the containerized setup, so `.env` values for those only take effect if you run the backend outside Docker.
+
+- `JWT_SECRET` - **change this in any real deployment.** The default is a placeholder and is only acceptable for local development.
+- `NEWS_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `TWITTER_BEARER_TOKEN` - optional. Ingestion works without them (RSS, GitHub, SEC filings, and website scraping need no keys); sources that need a key are skipped gracefully with a warning in the worker logs.
+- `INGESTION_INTERVAL_MINUTES`, `MONITORING_INTERVAL_MINUTES` - how often the scheduler re-runs ingestion and website monitoring. Defaults are 30 and 60.
+- `DEMO_EMAIL`, `DEMO_PASSWORD`, `DEMO_NAME` - the seeded demo account. Change these if you do not want the well-known default login.
+- The HF model names (`SENTIMENT_MODEL`, `NER_MODEL`, etc.) - override only if you know what you are doing; defaults are the models the pipelines were tested with.
+
+See `.env.example` for the full list with defaults.
+
+## Project layout
+
+```
+insightscout/
+  start.sh                 One-command setup: infra, then app services
+  docker-compose.yml       postgres, redis, rabbitmq, backend, worker, frontend
+  .env.example             Documented settings (copy to .env to customize)
+  backend/
+    Dockerfile
+    requirements.txt       Pinned dependencies
+    alembic/               Database migrations
+    app/
+      main.py              FastAPI app, routers, CORS, startup lifespan
+      config.py            Settings (reads env, falls back to sane defaults)
+      routers/             auth, dashboard, competitors, activities, sentiment,
+                           insights, alerts, monitoring, ingestion
+      services/            ingestion.py, nlp.py, vision.py, insights.py, scheduler.py
+      workers/consumer.py  RabbitMQ consumer: ingestion -> NLP -> vision -> insights
+      seed.py              Demo data seeder (idempotent)
+  frontend/
+    Dockerfile
+    src/
+      app/                 Next.js App Router pages (dashboard, auth, settings, trends)
+      components/          layout, ui primitives
+      lib/                 API client (proxied through Next.js rewrites), store
+```
+
+## Stopping and cleanup
+
+```bash
+docker compose down        # stop services, keep data
+docker compose down -v     # stop services and delete all data volumes
+```
+
+## Notes and limitations
+
+- This is a development-grade setup. The backend runs uvicorn with `--reload` and the frontend runs `next dev`, which is great for iterating but not how you would deploy it.
+- First startup downloads several hundred MB of HuggingFace models, so the worker is slow to become useful on a cold start. Models are cached in a named volume (`hf_cache`) so this only happens once.
+- Demo credentials are intentionally simple and documented. Do not expose this stack to the internet without changing them and setting a real `JWT_SECRET`.
